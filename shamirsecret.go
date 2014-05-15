@@ -2,7 +2,7 @@ package polypasshash
 
 
 import (
-	"fmt"
+	//"fmt"
   "math/rand"
 	"time"
 )
@@ -14,7 +14,7 @@ type shamirSecret struct {
 }
 
 type share struct {
-	shareNumber int
+	shareNumber byte
 	shareBytes []byte
 }
 
@@ -44,20 +44,18 @@ func ShamirSecret(threshold int, secret string) shamirSecret {
 	if ss.secret != "" {
 		for i, c := range ss.secret {
 			secretBytes := []byte{byte(c)}
-			randomBytes := make([]byte, 32)
-			for i:=0; i <= 31; i++{ randomBytes[i] = byte(random.Intn(256)) }
+			randomBytes := make([]byte, ss.threshold-1)
+			for i:=0; i < ss.threshold-1; i++{ randomBytes[i] = byte(random.Intn(256)) }
 			secretBytes = append(secretBytes, randomBytes...)
 			ss.coefficients[i] = secretBytes
-			fmt.Println(ss.coefficients)
 		}
 	}
 
-	fmt.Println("ShamirSecret initialized!!", ss.secret)
 	return ss
 }
 
-func (ss *shamirSecret) ComputeShare(x int) share {
-	if x <= 0 || x > 256 {
+func (ss *shamirSecret) ComputeShare(x byte) share {
+	if x <= 0 || x >= 255 {
 		panic("x must be between 1 and 255")
 	}
 
@@ -89,8 +87,7 @@ func (ss *shamirSecret) IsValidShare(share share) bool {
 	}
 }
 
-/*
-func (ss *shamirSecret) RecoverSecretData(shares []share) {
+func (ss *shamirSecret) RecoverSecretData(shares []share) string {
 	var newShares []share
 
 	for _, share := range shares {
@@ -115,7 +112,7 @@ func (ss *shamirSecret) RecoverSecretData(shares []share) {
 		panic("Recovering secretdata when some is stored.")
 	}
 
-	var xs []int
+	var xs []byte
 
 	for _, share := range shares {
 		include := false
@@ -132,23 +129,23 @@ func (ss *shamirSecret) RecoverSecretData(shares []share) {
 			panic("Shares have different length!")
 		}
 
-		xs = append(xs, share.shareBytes)
+		xs = append(xs, share.shareNumber)
 	}
 
   var myCoefficients [][]byte
 	var mySecretData string
 
-	for byteToUse:=0; byteToUse<len(shares[0][1]); i++ {
-		var fxs []int
+	for byteToUse:=0; byteToUse<len(shares[0].shareBytes); byteToUse++ {
+		var fxs []byte
 
 		for _, share := range shares {
-			fxs = append(fxs, share[1][byteToUse])
+			fxs = append(fxs, share.shareBytes[byteToUse])
 		}
 
-		resultingPoly := fullLagrange(xs, fxs)
+		resultingPoly := fullLagurange(xs, fxs)
 
     match := true
-		_resultingPoly := append(resultingPoly[0:ss.threshold], make([]int, len(shares)-ss.threshold))
+		_resultingPoly := append(resultingPoly[0:ss.threshold], make([]byte, len(shares)-ss.threshold)...)
 
 		for i, r:= range resultingPoly {
 			if _resultingPoly[i] != r { match = false}
@@ -163,11 +160,11 @@ func (ss *shamirSecret) RecoverSecretData(shares []share) {
 	}
 
 	ss.coefficients = myCoefficients
-	ss.secretdata = mySecretData
+	ss.secret = mySecretData
 
-	fmt.Println(ss.secretdata)
+
+	return ss.secret
 }
-*/
 
   var GF256_EXP = []int {
        0x01, 0x03, 0x05, 0x0f, 0x11, 0x33, 0x55, 0xff,
@@ -239,11 +236,11 @@ func (ss *shamirSecret) RecoverSecretData(shares []share) {
         0x0d, 0x63, 0x8c, 0x80, 0xc0, 0xf7, 0x70, 0x07,
      }
 
-func fullLagurange(xs []int, fxs []int) []int {
-	var returnedCoefficients []int
+func fullLagurange(xs []byte, fxs []byte) []byte {
+	var returnedCoefficients []byte
 
 	for i:=0; i<len(fxs); i++ {
-		thisPolynomial := []int{1}
+		thisPolynomial := []byte{1}
 
 		for j:=0; j<len(fxs); j++ {
 			if i == j {continue}
@@ -251,12 +248,12 @@ func fullLagurange(xs []int, fxs []int) []int {
 			denominator := gf256Sub(xs[i], xs[j])
 
 
-			thisTerm := []int{gf256Div(xs[j], denominator), gf256Div(1, denominator)}
+			thisTerm := []byte{gf256Div(xs[j], denominator), gf256Div(1, denominator)}
 
 			thisPolynomial = multiplyPolynomials(thisPolynomial, thisTerm)
 		}
 
-		thisPolynomial = multiplyPolynomials(thisPolynomial, []int{fxs[i]})
+		thisPolynomial = multiplyPolynomials(thisPolynomial, []byte{fxs[i]})
 
 		returnedCoefficients = addPolynomials(returnedCoefficients, thisPolynomial)
 	}
@@ -264,15 +261,15 @@ func fullLagurange(xs []int, fxs []int) []int {
 	return returnedCoefficients
 }
 
-func f(x int, coefsBytes []byte) int {
+func f(x byte, coefsBytes []byte) byte {
 	if x == 0 {
 		panic("Invalid share index value. Cannot be 0")
   }
 
-	accumulator, x_i := 0, 1
+	var accumulator, x_i byte = 0, 1
 
   for _, c := range coefsBytes {
-    accumulator = gf256Add(accumulator, gf256Mul(int(c), x_i))
+    accumulator = gf256Add(accumulator, gf256Mul(c, x_i))
 		x_i = gf256Mul(x_i, x)
 	}
 
@@ -280,12 +277,12 @@ func f(x int, coefsBytes []byte) int {
 
 }
 
-func multiplyPolynomials(a []int, b []int) []int {
-	var resultTerms, termPadding []int
+func multiplyPolynomials(a []byte, b []byte) []byte {
+	var resultTerms, termPadding []byte
 
 	for i:=0; i<len(b); i++ {
 		bterm := b[i]
-		thisValue := make([]int, len(termPadding))
+		thisValue := make([]byte, len(termPadding))
 
 		copy(thisValue, termPadding);
 
@@ -302,45 +299,44 @@ func multiplyPolynomials(a []int, b []int) []int {
 }
 
 
-func addPolynomials(a []int, b []int) []int {
+func addPolynomials(a []byte, b []byte) []byte {
 
 
   if len(a) < len(b) {
-		padding := make([]int, len(b) - len(a))
+		padding := make([]byte, len(b) - len(a))
     a = append(a, padding...)
 	} else if len(a) > len(b){
-		padding := make([]int, len(a) - len(b))
+		padding := make([]byte, len(a) - len(b))
     b = append(b, padding...)
 	}
 
-	result := make([]int, len(a))
+	result := make([]byte, len(a))
 
   for pos:=0; pos<len(a); pos++{
 			result[pos] = gf256Add(a[pos], b[pos])
 	}
 
-
 	return result
 }
 
 
-func gf256Add(a int, b int) int {
+func gf256Add(a byte, b byte) byte {
 	return a ^ b
 }
 
-func gf256Sub(a int, b int) int {
+func gf256Sub(a byte, b byte) byte {
 	return gf256Add(a, b)
 }
 
-func gf256Mul(a int, b int) int {
+func gf256Mul(a byte, b byte) byte {
 	if a == 0 && b == 0 {
 		return 0
 	} else {
-		return GF256_EXP[(GF256_LOG[a] + GF256_LOG[b]) % 255]
+		return byte(GF256_EXP[(GF256_LOG[a] + GF256_LOG[b]) % 255])
 	}
 }
 
-func gf256Div(a int, b int) int {
+func gf256Div(a byte, b byte) byte {
 	if a == 0 {
 		return 0
 	} else if b == 0 {
@@ -353,6 +349,6 @@ func gf256Div(a int, b int) int {
 		if mod < 0 {
 			mod = mod + 255
 		}
-		return GF256_EXP[mod]
+		return byte(GF256_EXP[mod])
 	}
 }
